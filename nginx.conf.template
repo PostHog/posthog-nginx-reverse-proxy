@@ -5,6 +5,10 @@ events { worker_connections 1024; }
 http {
     sendfile on;
 
+    client_max_body_size 10m;        # allow request bodies up to 10 MB
+    client_body_buffer_size 512k;    # buffer before writing to temp file
+    client_body_timeout 30s;         # give clients time to upload
+
     # DNS resolver with 1 second TTL for semi-dynamic DNS resolution.
     resolver 8.8.8.8 8.8.4.4 valid=1s ipv6=off;
 
@@ -63,6 +67,10 @@ http {
             proxy_ssl_server_name on;
             proxy_ssl_name $posthog_main_host;
             proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+            # Helpful timeouts for larger uploads or slower links
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
 
             # Strip upstream CORS so we control it
             proxy_hide_header Access-Control-Allow-Origin;
