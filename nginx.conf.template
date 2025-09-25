@@ -1,0 +1,81 @@
+worker_processes auto;
+
+events { worker_connections 1024; }
+
+http {
+    sendfile on;
+
+    # DNS resolver with 1 second TTL for semi-dynamic DNS resolution.
+    resolver 8.8.8.8 8.8.4.4 valid=1s ipv6=off;
+
+    # Map env var to CORS header (default to "")
+    map $http_origin $cors_allow_origin {
+        default "";
+        "~^${CORS_ALLOWED_ORIGIN}$" $http_origin;
+    }
+
+    server {
+        listen ${PORT};
+        server_name ${SERVER_NAME};
+
+        location = /health {
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Content-Type' 'text/plain' always;
+            return 200 'OK';
+        }
+
+        # ---- PostHog static assets via Cloudflare (requires SNI) ----
+        location ~ ^/static/(.*)$ {
+            set $posthog_static_host "${POSTHOG_CLOUD_REGION}-assets.i.posthog.com";
+            set $posthog_static "https://$posthog_static_host/static/";
+            # Force re-resolution and pass path/query
+            proxy_pass $posthog_static$1$is_args$args;
+
+            # Ensure Host and SNI match the upstream hostname
+            proxy_set_header Host $posthog_static_host;
+            proxy_ssl_server_name on;
+            proxy_ssl_name $posthog_static_host;
+            proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+            # Strip upstream CORS so we control it
+            proxy_hide_header Access-Control-Allow-Origin;
+            proxy_hide_header Access-Control-Allow-Credentials;
+            proxy_hide_header Vary;
+
+            # CORS headers
+            add_header Access-Control-Allow-Origin $cors_allow_origin always;
+            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Content-Type, Authorization" always;
+            add_header Access-Control-Max-Age 86400 always;
+            add_header Vary "Origin" always;
+
+            # Handle preflight quickly
+            if ($request_method = OPTIONS) { return 204; }
+        }
+
+        # ---- PostHog main endpoints (also require SNI) ----
+        location ~ ^/(.*)$ {
+            set $posthog_main_host "${POSTHOG_CLOUD_REGION}.i.posthog.com";
+            set $posthog_main "https://$posthog_main_host/";
+            proxy_pass $posthog_main$1$is_args$args;
+
+            proxy_set_header Host $posthog_main_host;
+            proxy_ssl_server_name on;
+            proxy_ssl_name $posthog_main_host;
+            proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+            # Strip upstream CORS so we control it
+            proxy_hide_header Access-Control-Allow-Origin;
+            proxy_hide_header Access-Control-Allow-Credentials;
+            proxy_hide_header Vary;
+
+            add_header Access-Control-Allow-Origin $cors_allow_origin always;
+            add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Content-Type, Authorization" always;
+            add_header Access-Control-Max-Age 86400 always;
+            add_header Vary "Origin" always;
+
+            if ($request_method = OPTIONS) { return 204; }
+        }
+    }
+}
