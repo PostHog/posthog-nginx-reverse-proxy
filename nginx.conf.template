@@ -1,44 +1,52 @@
 worker_processes auto;
-
 events { worker_connections 1024; }
-
 http {
     sendfile on;
-
     server {
         listen ${PORT};
         server_name ${SERVER_NAME};
-
         # DNS resolver
         resolver 8.8.8.8 8.8.4.4 valid=1s ipv6=off;
-
+        
         # Health check endpoint
         location = /health {
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Content-Type' 'text/plain' always;
             return 200 'OK';
         }
-
+        
         # Static assets (surveys.js, etc.)
         location ~ ^/static/(.*)$ {
             set $posthog_static "https://${POSTHOG_CLOUD_REGION}-assets.i.posthog.com/static/";
             proxy_pass $posthog_static$1$is_args$args;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}-assets.i.posthog.com";
             
-            # CORS headers - ONLY ONCE
+            # Remove upstream CORS headers to prevent duplicates
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            proxy_hide_header 'Access-Control-Expose-Headers';
+            
+            # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
             add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
-
+        
         # Main API endpoints
         location ~ ^/(.*)$ {
             set $posthog_main "https://${POSTHOG_CLOUD_REGION}.i.posthog.com/";
             proxy_pass $posthog_main$1$is_args$args;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}.i.posthog.com";
             
-            # CORS headers - ONLY ONCE
+            # Remove upstream CORS headers to prevent duplicates
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            proxy_hide_header 'Access-Control-Expose-Headers';
+            
+            # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
