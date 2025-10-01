@@ -2,7 +2,6 @@ worker_processes auto;
 
 events { worker_connections 1024; }
 
-
 http {
     sendfile on;
 
@@ -27,6 +26,20 @@ http {
             # use variable to force proper DNS re-resolution, also must manually pass along path
             proxy_pass $posthog_static$1$is_args$args;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}-assets.i.posthog.com";
+            
+            # Add CORS headers for static assets - ONLY ONCE
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+            
+            # Handle preflight requests - NO DUPLICATE HEADERS HERE
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Max-Age' 1728000;
+                add_header 'Content-Type' 'text/plain; charset=utf-8';
+                add_header 'Content-Length' 0;
+                return 204;
+            }
         }
 
         location ~ ^/(.*)$ {
@@ -34,7 +47,20 @@ http {
             # use variable to force proper DNS re-resolution, also must manually pass along path
             proxy_pass $posthog_main$1$is_args$args;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}.i.posthog.com";
+            
+            # Add CORS headers for main API - ONLY ONCE
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+            
+            # Handle preflight requests - NO DUPLICATE HEADERS HERE
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Max-Age' 1728000;
+                add_header 'Content-Type' 'text/plain; charset=utf-8';
+                add_header 'Content-Length' 0;
+                return 204;
+            }
         }
-
     }
 }
