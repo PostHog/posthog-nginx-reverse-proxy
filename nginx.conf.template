@@ -15,11 +15,11 @@ http {
             return 200 'OK';
         }
         
-        # Static assets (surveys.js, etc.)
-        location /static/ {
-            set $posthog_static "https://${POSTHOG_CLOUD_REGION}-assets.i.posthog.com";
-            proxy_pass $posthog_static;
+        # Static assets - from us-assets.i.posthog.com
+        location /static {
+            proxy_pass https://${POSTHOG_CLOUD_REGION}-assets.i.posthog.com;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}-assets.i.posthog.com";
+            proxy_ssl_server_name on;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
@@ -36,9 +36,9 @@ http {
         
         # Main API endpoints
         location / {
-            set $posthog_main "https://${POSTHOG_CLOUD_REGION}.i.posthog.com";
-            proxy_pass $posthog_main;
+            proxy_pass https://${POSTHOG_CLOUD_REGION}.i.posthog.com;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}.i.posthog.com";
+            proxy_ssl_server_name on;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
