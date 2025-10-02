@@ -1,40 +1,56 @@
 worker_processes auto;
-
 events { worker_connections 1024; }
-
-
 http {
     sendfile on;
-
     server {
         listen ${PORT};
-
         server_name ${SERVER_NAME};
-
-        # DNS resolver with 1 second TTL for semi-dynamic DNS resolution.
-        # 1s is the shortest time you can set for a TTL, because 0s is equivalent to unset.
-        # If deploying on Railway, ensure ipv6=off because it doesn't support outbound IPv6.
+        # DNS resolver
         resolver 8.8.8.8 8.8.4.4 valid=1s ipv6=off;
-
+        
+        # Health check endpoint
         location = /health {
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Content-Type' 'text/plain' always;
             return 200 'OK';
         }
-
-        location ~ ^/static/(.*)$ {
-            set $posthog_static "https://${POSTHOG_CLOUD_REGION}-assets.i.posthog.com/static/";
-            # use variable to force proper DNS re-resolution, also must manually pass along path
-            proxy_pass $posthog_static$1$is_args$args;
+        
+        # Static assets - from us-assets.i.posthog.com
+        location /static {
+            proxy_pass https://${POSTHOG_CLOUD_REGION}-assets.i.posthog.com;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}-assets.i.posthog.com";
+            proxy_ssl_server_name on;
+            
+            # Remove upstream CORS headers to prevent duplicates
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            proxy_hide_header 'Access-Control-Expose-Headers';
+            
+            # Add CORS headers
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
-
-        location ~ ^/(.*)$ {
-            set $posthog_main "https://${POSTHOG_CLOUD_REGION}.i.posthog.com/";
-            # use variable to force proper DNS re-resolution, also must manually pass along path
-            proxy_pass $posthog_main$1$is_args$args;
+        
+        # Main API endpoints
+        location / {
+            proxy_pass https://${POSTHOG_CLOUD_REGION}.i.posthog.com;
             proxy_set_header Host "${POSTHOG_CLOUD_REGION}.i.posthog.com";
+            proxy_ssl_server_name on;
+            
+            # Remove upstream CORS headers to prevent duplicates
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            proxy_hide_header 'Access-Control-Expose-Headers';
+            
+            # Add CORS headers
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
-
     }
 }
