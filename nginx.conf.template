@@ -18,44 +18,43 @@ http {
             return 200 'OK';
         }
         
-        # Static assets - from us-assets.i.posthog.com
-        location /static {
+        # Static assets
+        location /static/ {
             set $ph_assets ${POSTHOG_CLOUD_REGION}-assets.i.posthog.com;
-            proxy_pass https://$ph_assets;
+            proxy_pass https://$ph_assets$request_uri;
             proxy_set_header Host $ph_assets;
             proxy_ssl_server_name on;
-            
+            proxy_ssl_name $ph_assets;
+
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
-            proxy_hide_header 'Access-Control-Allow-Methods';
-            proxy_hide_header 'Access-Control-Allow-Headers';
-            proxy_hide_header 'Access-Control-Expose-Headers';
-            
             # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
-        
-        # Main API endpoints
+
+        location /array/ {
+            set $ph_assets ${POSTHOG_CLOUD_REGION}-assets.i.posthog.com;
+            proxy_pass https://$ph_assets$request_uri;
+            proxy_set_header Host $ph_assets;
+            proxy_ssl_server_name on;
+            proxy_ssl_name $ph_assets;
+
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            add_header 'Access-Control-Allow-Origin' '*' always;
+        }
+
         location / {
             set $ph_ingest ${POSTHOG_CLOUD_REGION}.i.posthog.com;
-            proxy_pass https://$ph_ingest;
+            proxy_pass https://$ph_ingest$request_uri;
             proxy_set_header Host $ph_ingest;
             proxy_ssl_server_name on;
+            proxy_ssl_name $ph_ingest;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
-            proxy_hide_header 'Access-Control-Allow-Methods';
-            proxy_hide_header 'Access-Control-Allow-Headers';
-            proxy_hide_header 'Access-Control-Expose-Headers';
             
             # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
     }
 }
