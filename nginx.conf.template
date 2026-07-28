@@ -25,6 +25,38 @@ http {
             proxy_set_header Host $ph_assets;
             proxy_ssl_server_name on;
             
+            # Forward the end user's IP (see the note in `location /`)
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Real-IP $remote_addr;
+            
+            # Remove upstream CORS headers to prevent duplicates
+            proxy_hide_header 'Access-Control-Allow-Origin';
+            proxy_hide_header 'Access-Control-Allow-Methods';
+            proxy_hide_header 'Access-Control-Allow-Headers';
+            proxy_hide_header 'Access-Control-Expose-Headers';
+            
+            # Add CORS headers
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
+        }
+        
+        # SDK remote config - also from us-assets.i.posthog.com. posthog-js
+        # fetches /array/<token>/config from the proxy domain, and it drives
+        # replay conditions, flag preloading, surveys and sampling. Without
+        # this block it falls through to `location /` and is served by the
+        # ingestion host instead of the CDN-cached assets host.
+        location /array {
+            set $ph_assets ${POSTHOG_CLOUD_REGION}-assets.i.posthog.com;
+            proxy_pass https://$ph_assets;
+            proxy_set_header Host $ph_assets;
+            proxy_ssl_server_name on;
+            
+            # Forward the end user's IP (see the note in `location /`)
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Real-IP $remote_addr;
+            
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
             proxy_hide_header 'Access-Control-Allow-Methods';
@@ -44,6 +76,14 @@ http {
             proxy_pass https://$ph_ingest;
             proxy_set_header Host $ph_ingest;
             proxy_ssl_server_name on;
+            
+            # Forward the end user's IP. nginx does not add these headers on
+            # its own, and PostHog derives an event's $ip from them. Without
+            # them every proxied event is attributed to this proxy's egress IP,
+            # and the GeoIP transformation then overwrites each person's stored
+            # country, city, subdivision and timezone with the proxy's location.
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Real-IP $remote_addr;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
