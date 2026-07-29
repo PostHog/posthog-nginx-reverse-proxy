@@ -7,50 +7,115 @@ http {
     # This resolver is IGNORED by hardcoded proxy_pass, but USED by variables
     resolver 8.8.8.8 8.8.4.4 valid=30s ipv6=off;
 
+    # This proxy terminates plain HTTP (see README) and always sits behind
+    # something else doing TLS, so $scheme is "http" here even when the browser
+    # used HTTPS. Trust the upstream terminator's X-Forwarded-Proto if it sent
+    # one, and only fall back to $scheme when it didn't.
+    map $http_x_forwarded_proto $forwarded_proto {
+        default $http_x_forwarded_proto;
+        ''      $scheme;
+    }
+
+    # With a CDN or platform router in front, $remote_addr is only the last hop.
+    # The original client is the first entry of the inbound X-Forwarded-For, and
+    # that is the address PostHog geolocates on.
+    map $http_x_forwarded_for $client_ip {
+        ~^\s*([^,\s]+) $1;
+        default        $remote_addr;
+    }
+
     server {
         listen ${PORT};
         server_name ${SERVER_NAME};
-        
-        # Health check endpoint
+
+        # Health check endpoint. Only reports OK if the PostHog ingest host is
+        # actually reachable from this container, so that DNS, egress and TLS
+        # failures surface as a 503 instead of a hardcoded 200.
         location = /health {
+            auth_request /_upstream_check;
+            error_page 401 403 500 502 503 504 = @unhealthy;
+            # auth_request runs in the access phase, which is *after* rewrite,
+            # so a plain `return 200` here would answer before the check runs.
+            # Falling through to a named location keeps the check in the path.
+            try_files /nonexistent @healthy;
+        }
+
+        location @healthy {
             add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Cache-Control' 'no-store' always;
             add_header 'Content-Type' 'text/plain' always;
             return 200 'OK';
         }
-        
+
+        location @unhealthy {
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Cache-Control' 'no-store' always;
+            add_header 'Content-Type' 'text/plain' always;
+            return 503 'upstream unreachable';
+        }
+
+        # Cheap HEAD request against the ingest host, used only by /health
+        location = /_upstream_check {
+            internal;
+            set $ph_health ${POSTHOG_CLOUD_REGION}.i.posthog.com;
+            proxy_pass https://$ph_health/robots.txt;
+            proxy_set_header Host $ph_health;
+            proxy_ssl_server_name on;
+            proxy_method HEAD;
+            proxy_pass_request_body off;
+            proxy_pass_request_headers off;
+            proxy_connect_timeout 2s;
+            proxy_send_timeout 3s;
+            proxy_read_timeout 3s;
+        }
+
         # Static assets - from us-assets.i.posthog.com
         location /static {
             set $ph_assets ${POSTHOG_CLOUD_REGION}-assets.i.posthog.com;
             proxy_pass https://$ph_assets;
             proxy_set_header Host $ph_assets;
             proxy_ssl_server_name on;
-            
+
+            # Preserve the original client so PostHog does not attribute every
+            # request to this proxy
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Real-IP $client_ip;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
+            proxy_set_header X-Forwarded-Host $host;
+
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
             proxy_hide_header 'Access-Control-Allow-Methods';
             proxy_hide_header 'Access-Control-Allow-Headers';
             proxy_hide_header 'Access-Control-Expose-Headers';
-            
+
             # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
             add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
-        
+
         # Main API endpoints
         location / {
             set $ph_ingest ${POSTHOG_CLOUD_REGION}.i.posthog.com;
             proxy_pass https://$ph_ingest;
             proxy_set_header Host $ph_ingest;
             proxy_ssl_server_name on;
-            
+
+            # Without these, PostHog sees this container's IP as the client IP,
+            # which silently breaks GeoIP on every proxied event
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Real-IP $client_ip;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
+            proxy_set_header X-Forwarded-Host $host;
+
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
             proxy_hide_header 'Access-Control-Allow-Methods';
             proxy_hide_header 'Access-Control-Allow-Headers';
             proxy_hide_header 'Access-Control-Expose-Headers';
-            
+
             # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
