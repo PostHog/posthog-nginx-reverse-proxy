@@ -4,8 +4,12 @@ http {
     sendfile on;
     client_max_body_size 64M; # Support large session recording uploads
 
-    # This resolver is IGNORED by hardcoded proxy_pass, but USED by variables
+    # Variables in proxy_pass make nginx refresh upstream addresses at this interval.
     resolver 8.8.8.8 8.8.4.4 valid=30s ipv6=off;
+    resolver_timeout 5s;
+
+    proxy_ssl_verify on;
+    proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
 
     server {
         listen ${PORT};
@@ -24,6 +28,7 @@ http {
             proxy_pass https://$ph_assets;
             proxy_set_header Host $ph_assets;
             proxy_ssl_server_name on;
+            proxy_ssl_name $ph_assets;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
@@ -44,6 +49,7 @@ http {
             proxy_pass https://$ph_ingest;
             proxy_set_header Host $ph_ingest;
             proxy_ssl_server_name on;
+            proxy_ssl_name $ph_ingest;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
