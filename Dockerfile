@@ -1,22 +1,23 @@
-FROM ubuntu:latest
+FROM ubuntu:latest AS builder
 
 ADD nginx.conf.template nginx.conf.template
 
-RUN apt-get update
-
-RUN apt-get install -y gettext-base
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gettext-base \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG SERVER_NAME
-
 ARG PORT=8080
 ENV PORT=$PORT
-
 ARG POSTHOG_CLOUD_REGION
 
 RUN envsubst '$SERVER_NAME,$POSTHOG_CLOUD_REGION,$PORT=8080' < nginx.conf.template > nginx.conf
 
 FROM nginx:latest
 
-COPY --from=0 nginx.conf /etc/nginx/nginx.conf
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN cat /etc/nginx/nginx.conf
+COPY --from=builder nginx.conf /etc/nginx/nginx.conf
