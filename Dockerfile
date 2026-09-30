@@ -5,8 +5,11 @@ FROM nginx:1.30-alpine AS config
 # `_` is nginx's catch-all: this image only ever has one server block, so
 # SERVER_NAME is documentation rather than routing.
 ARG SERVER_NAME=_
-ARG POSTHOG_CLOUD_REGION=us
+ARG POSTHOG_CLOUD_REGION
 ARG PORT=8080
+
+# Without a valid region, the rendered config points at a host that does not exist.
+RUN case "$POSTHOG_CLOUD_REGION" in us|eu) ;; *) echo "POSTHOG_CLOUD_REGION must be us or eu" >&2; exit 1 ;; esac
 
 COPY nginx.conf.template /tmp/nginx.conf.template
 
