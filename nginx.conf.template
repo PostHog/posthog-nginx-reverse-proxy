@@ -9,6 +9,8 @@ http {
     resolver_timeout 5s;
 
     proxy_ssl_verify on;
+    # The default depth of 1 rejects upstream chains that reach the trust anchor through a cross-signed root.
+    proxy_ssl_verify_depth 3;
     proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
 
     server {
