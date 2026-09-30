@@ -91,17 +91,10 @@ http {
             proxy_set_header X-Forwarded-Proto $forwarded_proto;
             proxy_set_header X-Forwarded-Host $host;
 
-            # Remove upstream CORS headers to prevent duplicates
+            # Upstream sends the other CORS headers. A fixed list here would block
+            # preflights for request headers that are not in the list.
             proxy_hide_header 'Access-Control-Allow-Origin';
-            proxy_hide_header 'Access-Control-Allow-Methods';
-            proxy_hide_header 'Access-Control-Allow-Headers';
-            proxy_hide_header 'Access-Control-Expose-Headers';
-
-            # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
 
         # SDK remote config - also from us-assets.i.posthog.com. posthog-js
@@ -123,17 +116,10 @@ http {
             proxy_set_header X-Forwarded-Proto $forwarded_proto;
             proxy_set_header X-Forwarded-Host $host;
 
-            # Remove upstream CORS headers to prevent duplicates
+            # Upstream sends the other CORS headers. A fixed list here would block
+            # preflights for request headers that are not in the list.
             proxy_hide_header 'Access-Control-Allow-Origin';
-            proxy_hide_header 'Access-Control-Allow-Methods';
-            proxy_hide_header 'Access-Control-Allow-Headers';
-            proxy_hide_header 'Access-Control-Expose-Headers';
-
-            # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
 
         # Main API endpoints
@@ -151,17 +137,10 @@ http {
             proxy_set_header X-Forwarded-Proto $forwarded_proto;
             proxy_set_header X-Forwarded-Host $host;
 
-            # Remove upstream CORS headers to prevent duplicates
+            # Upstream sends the other CORS headers. A fixed list here would block
+            # preflights for request headers that are not in the list.
             proxy_hide_header 'Access-Control-Allow-Origin';
-            proxy_hide_header 'Access-Control-Allow-Methods';
-            proxy_hide_header 'Access-Control-Allow-Headers';
-            proxy_hide_header 'Access-Control-Expose-Headers';
-
-            # Add CORS headers
             add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }
     }
 }
