@@ -1,123 +1,164 @@
 # PostHog nginx reverse proxy
 
-A minimal nginx container that reverse proxies PostHog Cloud from a subdomain you
-control, so SDK traffic is sent to (for example) `ph.example.com` instead of
-`us.i.posthog.com`. See [Deploy a reverse proxy](https://posthog.com/docs/advanced/proxy)
-for why you'd want that.
+A small nginx container that reverse-proxies PostHog through a subdomain you own, so events
+aren't dropped by ad blockers that block known analytics domains.
 
-It fronts two PostHog hosts and nothing else:
+If you don't want to run this yourself, PostHog offers a
+[managed reverse proxy](https://posthog.com/docs/advanced/proxy/managed-reverse-proxy) that needs
+only a CNAME. See the [proxy docs](https://posthog.com/docs/advanced/proxy) for the full picture,
+and [the nginx guide](https://posthog.com/docs/advanced/proxy/nginx) for the canonical config this
+template follows.
 
-| Path      | Upstream                                   |
-| --------- | ------------------------------------------ |
-| `/static` | `<region>-assets.i.posthog.com` (`array.js`, toolbar, recorder) |
-| `/`       | `<region>.i.posthog.com` (event capture, flags, replay uploads) |
+## What it routes
 
-Because it only proxies PostHog's own ingest and asset hosts, it is never in the
-request path for your own application's pages.
+`POSTHOG_CLOUD_REGION` is `us` or `eu`. It is required, and the build fails without it.
 
-## Build and run
+| Path        | Upstream                                    | Serves                                                                 |
+| ----------- | ------------------------------------------- | ---------------------------------------------------------------------- |
+| `/health`   | `HEAD` to `${REGION}.i.posthog.com`         | `200 OK` when `${REGION}.i.posthog.com` is reachable, else `503`     |
+| `/static/…` | `${REGION}-assets.i.posthog.com`            | `array.js` and the other SDK assets                                    |
+| `/array/…`  | `${REGION}-assets.i.posthog.com`            | SDK remote config — replay conditions, flag preloading, surveys, sampling |
+| everything else | `${REGION}.i.posthog.com`               | event capture, feature flags, session recordings, API                  |
 
-The config is rendered from `nginx.conf.template` **at image build time**, so
-these are build arguments, not runtime environment variables:
+The two asset paths must point at the assets host, not the ingestion host. `/static/` and
+`/array/` are CDN-cached there; the ingestion host is not a CDN.
 
-| Build arg              | Default | Notes                                                    |
-| ---------------------- | ------- | -------------------------------------------------------- |
-| `POSTHOG_CLOUD_REGION` | `us`    | `us` or `eu` — must match your PostHog Cloud region       |
-| `PORT`                 | `8080`  | Port nginx listens on, baked into the config              |
-| `SERVER_NAME`          | `_`     | Cosmetic; there is only one server block, so it matches all hostnames |
+## Deploy
+
+Build with your subdomain and region baked in:
 
 ```bash
 docker build \
+  --build-arg SERVER_NAME=e.yourdomain.com \
   --build-arg POSTHOG_CLOUD_REGION=us \
-  --build-arg SERVER_NAME=ph.example.com \
+  --build-arg PORT=8080 \
   -t posthog-proxy .
 
 docker run -p 8080:8080 posthog-proxy
-curl -i http://localhost:8080/health
 ```
 
-If you deploy somewhere that injects a `PORT` at runtime (Railway, Heroku, Cloud
-Run), pass that same value as `--build-arg PORT=...` — changing `PORT` in the
-environment after the image is built has no effect.
+Two things this container does **not** do:
 
-## TLS is not handled here — terminate it in front
+- **TLS.** It listens on plain HTTP on `$PORT`. Terminate TLS in front of it (load balancer,
+  Cloudflare, your platform's router). Browsers will refuse a mixed-content request from an
+  HTTPS page to an HTTP proxy.
+- **DNS.** Point `e.yourdomain.com` at wherever you run this.
 
-`nginx.conf.template` only has `listen ${PORT};`. **This container speaks plain
-HTTP and holds no certificate.** Browsers must never reach it directly over
-`http://`; something in front has to terminate TLS for your proxy subdomain:
+Pick a subdomain that ad blockers won't flag — avoid `analytics`, `tracking`, `telemetry`,
+`posthog`, and `ph`, or you've defeated the point.
 
-- **Recommended:** a platform that terminates TLS for you (Fly.io, Railway,
-  Render, Cloud Run, an ALB/ingress with an ACM/cert-manager certificate) and
-  forwards to this container over HTTP on `${PORT}`.
-- **Cloudflare in front:** create a **proxied** (orange-cloud) DNS record for the
-  proxy subdomain, then pick the SSL/TLS encryption mode to match your origin:
-  - Origin is behind a platform/load balancer that serves valid HTTPS →
-    **Full (strict)**.
-  - Cloudflare connects straight to this container on plain HTTP → **Flexible**.
-    This is the only case where Flexible is correct, and it leaves the
-    Cloudflare→origin hop unencrypted, so prefer the option above.
+## Point your SDK at it
 
-  A mismatch here (Full/Full strict pointed at a plain-HTTP origin) surfaces as
-  Cloudflare 5xx error pages — a `525`/`526` on the proxy subdomain, not a
-  browser certificate warning on your app's own pages.
-
-Whatever sits in front, keep the requirements from the
-[proxy reference](https://posthog.com/docs/advanced/proxy/proxy-reference):
-allow `GET` and `POST` on every path, and allow request bodies up to 64 MB
-(session recordings are large — nginx here is already configured for that).
-
-## Client IP and geolocation
-
-PostHog derives an event's location from the client IP it receives, so the proxy
-forwards the original client on every request:
-
-```nginx
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-proxy_set_header X-Real-IP $client_ip;
-proxy_set_header X-Forwarded-Proto $forwarded_proto;
-```
-
-`$client_ip` is the first address in the inbound `X-Forwarded-For` when there is
-one, falling back to the connecting peer. That way a CDN hop in front of this
-proxy doesn't become the reported location — but it only works if that CDN sets
-`X-Forwarded-For` itself. Cloudflare's proxy does; a custom Cloudflare Worker
-has to [set it from `CF-Connecting-IP`](https://posthog.com/docs/advanced/proxy/cloudflare).
-If every event suddenly geolocates to one place, that header is the first thing
-to check.
-
-## Health check
-
-`GET /health` makes a cheap `HEAD` request to `<region>.i.posthog.com` before
-answering, so it reflects whether this container can actually reach PostHog:
-
-- `200 OK` — nginx is up and the ingest host is reachable
-- `503 upstream unreachable` — DNS, egress or TLS to PostHog is broken
-
-Point your platform's health check at it. It is deliberately not cached.
-
-## Configuring the SDK
+Set `api_host` to your proxy and `ui_host` to PostHog, so the toolbar and in-app links keep
+working:
 
 ```js
-posthog.init('<ph_project_api_key>', {
-    api_host: 'https://ph.example.com',
+posthog.init('<your-project-api-key>', {
+    api_host: 'https://e.yourdomain.com',
     ui_host: 'https://us.posthog.com', // or https://eu.posthog.com
 })
 ```
 
-`ui_host` is required, otherwise the toolbar and replay player link to the wrong
-place. Avoid obvious hostnames and paths such as `analytics`, `tracking`,
-`telemetry` or `posthog` — tracking blockers match on those.
+## Verify it works
 
-## Testing config changes locally
+Run these against your deployed proxy. `$PROXY` is `https://e.yourdomain.com`, `$TOKEN` is your
+project API key.
 
-`nginx.conf.template` is not valid nginx config on its own; render it first:
+**1. The container is up.**
 
 ```bash
-SERVER_NAME=localhost POSTHOG_CLOUD_REGION=us PORT=8080 \
-  envsubst '${SERVER_NAME} ${POSTHOG_CLOUD_REGION} ${PORT}' \
-  < nginx.conf.template > /tmp/nginx.conf
-nginx -t -c /tmp/nginx.conf
+curl -s $PROXY/health
+# OK
 ```
 
-The image build runs `nginx -t` too, so an invalid config fails the build rather
-than the deploy.
+**2. SDK assets are served, and from the CDN.** Look for a `cf-cache-status` header — that
+confirms you reached the assets host rather than falling through to ingestion:
+
+```bash
+curl -sI $PROXY/static/array.js | grep -iE 'HTTP/|content-type|cf-cache-status'
+# HTTP/2 200
+# content-type: application/javascript
+# cf-cache-status: HIT
+```
+
+**3. Remote config is served, and also from the CDN:**
+
+```bash
+curl -sI $PROXY/array/$TOKEN/config | grep -iE 'HTTP/|content-type|cf-cache-status'
+# HTTP/2 200
+# content-type: application/json
+# cf-cache-status: HIT
+```
+
+**4. Capture accepts events:**
+
+```bash
+curl -s -X POST $PROXY/i/v0/e/ \
+  -H 'Content-Type: application/json' \
+  -d '{"api_key":"'$TOKEN'","event":"proxy_check","distinct_id":"proxy-check"}'
+# {"status":"Ok"}
+```
+
+**5. Feature flags respond:**
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$PROXY/flags/?v=2" \
+  -H 'Content-Type: application/json' \
+  -d '{"api_key":"'$TOKEN'","distinct_id":"proxy-check"}'
+# 200
+```
+
+**6. The end user's IP survives the hop.** This is the check that's easy to miss, because
+everything above passes whether or not it's true. In PostHog, run:
+
+```sql
+SELECT properties.$ip, properties.$geoip_country_name, properties.$geoip_city_name, count()
+FROM events
+WHERE timestamp >= now() - INTERVAL 1 HOUR
+GROUP BY 1, 2, 3
+ORDER BY 4 DESC
+```
+
+You should see many different IPs. If nearly every event shares one IP — and the city is
+wherever your proxy runs, not where your users are — the proxy is swallowing the client IP.
+nginx does not add `X-Forwarded-For` on its own, and PostHog derives `$ip` from it. This
+template sets it on every proxied location; if you've adapted the config, that's the first thing
+to check.
+
+This matters beyond skewed charts: the GeoIP transformation writes `$geoip_*` properties with
+`$set`, so events carrying the proxy's IP overwrite the stored country, city, subdivision, and
+timezone on each person.
+
+**7. Finally, check a real browser.** Open your site with dev tools on the Network tab, trigger a
+pageview, and confirm the request goes to your proxy subdomain and returns `200`.
+
+## What to expect after switching
+
+**More events, not fewer.** That's the point — requests previously blocked now get through.
+PostHog's docs put the typical uplift at
+[10–30%, depending on your user base](https://posthog.com/docs/advanced/proxy). How much you
+actually recover depends entirely on how many of your users run a blocker, so treat a rise in
+volume as the proxy working rather than as double-counting.
+
+**Identity and history carry over unchanged.** posthog-js keys its stored state on your project
+token (`ph_<token>_posthog`), not on `api_host`, so changing `api_host` doesn't reset anyone's
+`distinct_id` or orphan existing persons. Returning users keep their history.
+
+**Watch your egress bill if you self-host the proxy.** Every event, session recording, flag call,
+and SDK asset now flows through your infrastructure. On platforms that bill bandwidth or
+invocations this adds up.
+
+## If you adapt this config
+
+Two things are easy to get wrong and fail silently:
+
+- **Forward the client IP** on every proxied location:
+  ```nginx
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $remote_addr;
+  ```
+  `$proxy_add_x_forwarded_for` appends to any existing header, so the chain stays intact when a
+  CDN sits in front of nginx.
+- **Send `/array/` to the assets host.** Without its own location block it falls through to
+  `location /` and gets served by the ingestion host. It still returns config, so nothing looks
+  broken — you just lose CDN caching on a request that gates replay, surveys, and flags.
