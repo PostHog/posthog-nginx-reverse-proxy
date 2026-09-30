@@ -11,11 +11,11 @@ template follows.
 
 ## What it routes
 
-`POSTHOG_CLOUD_REGION` is `us` or `eu`.
+`POSTHOG_CLOUD_REGION` is `us` or `eu`. It is required, and the build fails without it.
 
 | Path        | Upstream                                    | Serves                                                                 |
 | ----------- | ------------------------------------------- | ---------------------------------------------------------------------- |
-| `/health`   | answered locally                            | `200 OK`, for your load balancer                                       |
+| `/health`   | `HEAD` to `${REGION}.i.posthog.com`         | `200 OK` when `${REGION}.i.posthog.com` is reachable, else `503`     |
 | `/static/…` | `${REGION}-assets.i.posthog.com`            | `array.js` and the other SDK assets                                    |
 | `/array/…`  | `${REGION}-assets.i.posthog.com`            | SDK remote config (replay conditions, flag preloading, surveys, sampling) |
 | everything else | `${REGION}.i.posthog.com`               | event capture, feature flags, session recordings, API                  |
@@ -155,10 +155,11 @@ Two things are easy to get wrong and fail silently:
 - **Forward the client IP** on every proxied location:
   ```nginx
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Real-IP $client_ip;
   ```
   `$proxy_add_x_forwarded_for` appends to any existing header, so the chain stays intact when a
-  CDN sits in front of nginx.
+  CDN sits in front of nginx. `$client_ip` comes from a `map` in `nginx.conf.template`. It is the
+  first `X-Forwarded-For` address, because `$remote_addr` is the CDN when a CDN sits in front.
 - **Send `/array/` to the assets host.** Without its own location block it falls through to
   `location /` and gets served by the ingestion host. It still returns config, so nothing looks
   broken. You just lose CDN caching on a request that gates replay, surveys, and flags.
