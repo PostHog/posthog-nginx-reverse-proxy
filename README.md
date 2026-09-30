@@ -17,11 +17,11 @@ template follows.
 | ----------- | ------------------------------------------- | ---------------------------------------------------------------------- |
 | `/health`   | answered locally                            | `200 OK`, for your load balancer                                       |
 | `/static/…` | `${REGION}-assets.i.posthog.com`            | `array.js` and the other SDK assets                                    |
-| `/array/…`  | `${REGION}-assets.i.posthog.com`            | SDK remote config — replay conditions, flag preloading, surveys, sampling |
+| `/array/…`  | `${REGION}-assets.i.posthog.com`            | SDK remote config (replay conditions, flag preloading, surveys, sampling) |
 | everything else | `${REGION}.i.posthog.com`               | event capture, feature flags, session recordings, API                  |
 
 The two asset paths must point at the assets host, not the ingestion host. `/static/` and
-`/array/` are CDN-cached there; the ingestion host is not a CDN.
+`/array/` are CDN-cached there. The ingestion host is not a CDN.
 
 ## Deploy
 
@@ -44,7 +44,7 @@ Two things this container does **not** do:
   HTTPS page to an HTTP proxy.
 - **DNS.** Point `e.yourdomain.com` at wherever you run this.
 
-Pick a subdomain that ad blockers won't flag — avoid `analytics`, `tracking`, `telemetry`,
+Pick a subdomain that ad blockers won't flag. Avoid `analytics`, `tracking`, `telemetry`,
 `posthog`, and `ph`, or you've defeated the point.
 
 ## Point your SDK at it
@@ -71,7 +71,7 @@ curl -s $PROXY/health
 # OK
 ```
 
-**2. SDK assets are served, and from the CDN.** Look for a `cf-cache-status` header — that
+**2. SDK assets are served, and from the CDN.** Look for a `cf-cache-status` header. It
 confirms you reached the assets host rather than falling through to ingestion:
 
 ```bash
@@ -119,10 +119,10 @@ GROUP BY 1, 2, 3
 ORDER BY 4 DESC
 ```
 
-You should see many different IPs. If nearly every event shares one IP — and the city is
-wherever your proxy runs, not where your users are — the proxy is swallowing the client IP.
+You should see many different IPs. If nearly every event shares one IP (and the city is
+wherever your proxy runs, not where your users are), the proxy is swallowing the client IP.
 nginx does not add `X-Forwarded-For` on its own, and PostHog derives `$ip` from it. This
-template sets it on every proxied location; if you've adapted the config, that's the first thing
+template sets it on every proxied location. If you've adapted the config, that's the first thing
 to check.
 
 This matters beyond skewed charts: the GeoIP transformation writes `$geoip_*` properties with
@@ -134,7 +134,7 @@ pageview, and confirm the request goes to your proxy subdomain and returns `200`
 
 ## What to expect after switching
 
-**More events, not fewer.** That's the point — requests previously blocked now get through.
+**More events, not fewer.** That's the point: requests previously blocked now get through.
 PostHog's docs put the typical uplift at
 [10–30%, depending on your user base](https://posthog.com/docs/advanced/proxy). How much you
 actually recover depends entirely on how many of your users run a blocker, so treat a rise in
@@ -161,4 +161,4 @@ Two things are easy to get wrong and fail silently:
   CDN sits in front of nginx.
 - **Send `/array/` to the assets host.** Without its own location block it falls through to
   `location /` and gets served by the ingestion host. It still returns config, so nothing looks
-  broken — you just lose CDN caching on a request that gates replay, surveys, and flags.
+  broken. You just lose CDN caching on a request that gates replay, surveys, and flags.
