@@ -32,6 +32,11 @@ http {
             proxy_ssl_server_name on;
             proxy_ssl_name $ph_assets;
             
+            # The proxy runs on the site's own domain, so the browser attaches that
+            # site's cookies to every request. PostHog never needs them.
+            proxy_set_header Cookie "";
+            proxy_set_header Authorization "";
+            
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
             proxy_hide_header 'Access-Control-Allow-Methods';
@@ -52,6 +57,11 @@ http {
             proxy_set_header Host $ph_ingest;
             proxy_ssl_server_name on;
             proxy_ssl_name $ph_ingest;
+            
+            # The proxy runs on the site's own domain, so the browser attaches that
+            # site's cookies to every request. PostHog never needs them.
+            proxy_set_header Cookie "";
+            proxy_set_header Authorization "";
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
