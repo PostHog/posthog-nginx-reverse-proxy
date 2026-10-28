@@ -13,6 +13,12 @@ http {
     proxy_ssl_verify_depth 3;
     proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
 
+    # Forward the SDK's Bearer token, which capture v1 needs. Strip any other credentials.
+    map $http_authorization $posthog_authorization {
+        "~^Bearer " $http_authorization;
+        default     "";
+    }
+
     server {
         listen ${PORT};
         server_name ${SERVER_NAME};
@@ -61,7 +67,8 @@ http {
             # The proxy runs on the site's own domain, so the browser attaches that
             # site's cookies to every request. PostHog never needs them.
             proxy_set_header Cookie "";
-            proxy_set_header Authorization "";
+            # nginx omits the header when the mapped value is empty.
+            proxy_set_header Authorization $posthog_authorization;
             
             # Remove upstream CORS headers to prevent duplicates
             proxy_hide_header 'Access-Control-Allow-Origin';
