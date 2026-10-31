@@ -13,10 +13,10 @@ http {
     proxy_ssl_verify_depth 3;
     proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
 
-    # Forward the SDK's project token (Bearer phc_...), which capture v1 needs. Strip any other credentials.
-    # If your project token doesn't start with phc_, match exactly "Bearer <your project token>" instead.
+    # Forward PostHog keys (Bearer phc_, phs_ or phx_), which the SDKs need. Strip any other credentials.
+    # To allow an older key without one of these prefixes, also match its exact "Bearer <key>" value.
     map $http_authorization $posthog_authorization {
-        "~^Bearer phc_" $http_authorization;
+        "~^Bearer ph[csx]_" $http_authorization;
         default     "";
     }
 
